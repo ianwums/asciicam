@@ -28,6 +28,7 @@
     button {
       padding: 8px 12px; background: #1f6feb; color: #fff; border: 0; border-radius: 8px; cursor: pointer;
     }
+    button.secondary { background: #30363d; }
     button:disabled { opacity: .6; cursor: not-allowed; }
     .muted { opacity: .8; }
     .pill { padding: 2px 8px; border: 1px solid #2a2f3a; border-radius: 999px; font-size: 12px; }
@@ -47,6 +48,7 @@
       <strong>Webcam → Object → ASCII</strong>
       <span class="pill" id="modelStatus">Loading model…</span>
       <span class="pill" id="camStatus">Camera: not started</span>
+      <span class="pill" id="liveStatus">Live: off</span>
     </div>
   </header>
 
@@ -59,6 +61,8 @@
             <button id="startBtn">Start camera</button>
             <button id="snapBtn" disabled>Snapshot → ASCII</button>
             <button id="detectBtn" disabled>Detect only</button>
+            <button id="liveBtn" class="secondary" disabled>Start Live</button>
+            <button id="pauseBtn" class="secondary" disabled>Pause</button>
           </div>
         </div>
         <div class="stack">
@@ -98,7 +102,7 @@
   </main>
 
   <footer>
-    Works locally over HTTPS. Uses TensorFlow.js COCO-SSD for detection (no face recognition, only “person” class).
+    Works locally over HTTPS/localhost. Uses TensorFlow.js COCO-SSD for detection (no face recognition, only “person” class).
   </footer>
 
   <!-- TensorFlow.js + COCO-SSD -->
@@ -111,6 +115,8 @@
     const startBtn = document.getElementById('startBtn');
     const snapBtn = document.getElementById('snapBtn');
     const detectBtn = document.getElementById('detectBtn');
+    const liveBtn = document.getElementById('liveBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
     const asciiOut = document.getElementById('asciiOut');
     const draw = document.getElementById('draw');
     const asciiWidth = document.getElementById('asciiWidth');
@@ -120,6 +126,7 @@
     const charsetSel = document.getElementById('charset');
     const modelStatus = document.getElementById('modelStatus');
     const camStatus = document.getElementById('camStatus');
+    const liveStatus = document.getElementById('liveStatus');
     const mirror = document.getElementById('mirror');
     const showBoxes = document.getElementById('showBoxes');
     const detMeta = document.getElementById('detMeta');
@@ -127,7 +134,13 @@
     let model = null;
     let stream = null;
 
-    // Smooth progress helper
+    // Live mode state
+    let liveRunning = false;
+    let livePaused = false;
+    let liveAnimId = null;
+    let lastTick = 0;
+    const LIVE_INTERVAL_MS = 250; // ~4 fps; adjust if you want smoother
+
     const setProgress = (p) => { prog.style.width = `${Math.max(0, Math.min(100, p))}%`; };
 
     // Load model ASAP
@@ -151,13 +164,18 @@
       startBtn.disabled = camReady;
       snapBtn.disabled = !(camReady && mdlReady);
       detectBtn.disabled = !(camReady && mdlReady);
+      liveBtn.disabled = !(camReady && mdlReady);
+      pauseBtn.disabled = !(camReady && mdlReady && liveRunning);
+      pauseBtn.textContent = livePaused ? 'Resume' : 'Pause';
+      liveBtn.textContent = liveRunning ? 'Stop Live' : 'Start Live';
+      liveStatus.textContent = liveRunning ? (livePaused ? 'Live: paused' : 'Live: running') : 'Live: off';
     }
 
     // Start camera
     startBtn.addEventListener('click', async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
         });
         video.srcObject = stream;
@@ -165,19 +183,17 @@
         camStatus.textContent = 'Camera: running';
         updateButtons();
       } catch (err) {
-        camStatus.textContent = 'Camera: permission denied or unavailable';
+        camStatus.textContent = 'Camera: error — check permissions';
         console.error(err);
       }
     });
 
-    // Mirror toggle
     mirror.addEventListener('change', () => {
       video.style.transform = mirror.checked ? 'scaleX(-1)' : 'none';
     });
 
     asciiWidth.addEventListener('input', () => { wVal.textContent = asciiWidth.value; });
 
-    // Detect button: just draw boxes + label
     detectBtn.addEventListener('click', async () => {
       if (!model || !stream) return;
       labelEl.textContent = 'Detecting…';
@@ -187,7 +203,6 @@
       labelEl.textContent = best ? `Detected: ${best.class} (${(best.score*100).toFixed(1)}%)` : 'No confident detections.';
     });
 
-    // Snapshot → detect → ASCII
     snapBtn.addEventListener('click', async () => {
       if (!model || !stream) return;
       labelEl.textContent = 'Detecting…';
@@ -208,6 +223,68 @@
       labelEl.textContent = `ASCII generated for “${best.class}”.`;
     });
 
+    // NEW: Live mode toggle
+    liveBtn.addEventListener('click', () => {
+      if (!model || !stream) return;
+      if (liveRunning) {
+        stopLive();
+      } else {
+        startLive();
+      }
+      updateButtons();
+    });
+
+    // NEW: Pause/Resume for live
+    pauseBtn.addEventListener('click', () => {
+      if (!liveRunning) return;
+      livePaused = !livePaused;
+      updateButtons();
+    });
+
+    function startLive() {
+      liveRunning = true;
+      livePaused = false;
+      lastTick = 0;
+      labelEl.textContent = 'Live ASCII running…';
+      liveLoop(0); // kick off
+    }
+
+    function stopLive() {
+      liveRunning = false;
+      livePaused = false;
+      if (liveAnimId) cancelAnimationFrame(liveAnimId);
+      liveAnimId = null;
+      labelEl.textContent = 'Live stopped.';
+    }
+
+    async function liveTick() {
+      if (!liveRunning || livePaused) return;
+
+      const { detections, best, frameCanvas } = await detectFrame(true);
+      drawBoxes(detections);
+      updateDetMeta(best, detections.length);
+
+      if (best) {
+        const ascii = await cropAndAscii(frameCanvas, best.bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+        asciiOut.textContent = ascii;
+        labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
+      } else {
+        asciiOut.textContent = '(No confident detection.)';
+        labelEl.textContent = 'Live: no confident detections.';
+      }
+    }
+
+    // Throttled rAF loop
+    function liveLoop(ts) {
+      if (!liveRunning) return;
+      if (ts - lastTick >= LIVE_INTERVAL_MS) {
+        lastTick = ts;
+        // Fire and forget; next frame continues regardless
+        liveTick().catch(err => console.error(err));
+      }
+      liveAnimId = requestAnimationFrame(liveLoop);
+    }
+
     function updateDetMeta(best, count) {
       if (!best) {
         detMeta.textContent = 'No detection';
@@ -218,9 +295,9 @@
     }
 
     async function detectFrame(returnFrame = false) {
-      // Draw current video frame to an offscreen canvas
       const tmp = document.createElement('canvas');
       const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return { detections: [], best: null, frameCanvas: returnFrame ? tmp : null };
       tmp.width = vw; tmp.height = vh;
       const ctx = tmp.getContext('2d', { willReadFrequently: true });
 
@@ -230,15 +307,11 @@
       }
       ctx.drawImage(video, 0, 0, vw, vh);
 
-      // Run detection
       const predictions = await model.detect(tmp);
-      // Filter by score threshold
       const good = predictions.filter(p => p.score >= 0.5);
 
-      // Choose best: prefer specific objects; fallback to largest area
       let best = null;
       if (good.length) {
-        // Heuristic: choose highest score; if tie, largest area
         best = good.slice().sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score;
           const areaA = a.bbox[2]*a.bbox[3], areaB = b.bbox[2]*b.bbox[3];
@@ -256,7 +329,6 @@
       const ctx = draw.getContext('2d');
       draw.hidden = false;
 
-      // Background as semi-transparent overlay of current frame
       ctx.drawImage(video, 0, 0, vw, vh);
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
       ctx.fillRect(0, 0, vw, vh);
@@ -291,18 +363,15 @@
       const sw = Math.min(bw, sourceCanvas.width - sx);
       const sh = Math.min(bh, sourceCanvas.height - sy);
 
-      // Crop to bbox
       const crop = document.createElement('canvas');
       crop.width = sw; crop.height = sh;
       const cctx = crop.getContext('2d', { willReadFrequently: true });
       cctx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
 
-      // Target ASCII grid size (adjust height for character aspect ratio)
-      const charAspect = 2.0; // approx: characters are taller than they are wide
+      const charAspect = 2.0;
       const outW = outWidthChars;
       const outH = Math.max(12, Math.round((sh / sw) * outW / charAspect));
 
-      // Scale to small canvas
       const small = document.createElement('canvas');
       small.width = outW;
       small.height = outH;
@@ -313,17 +382,15 @@
       const chars = charset;
       const n = chars.length - 1;
 
-      // Build ASCII rows
       let out = '';
       for (let y = 0; y < outH; y++) {
         let row = '';
         for (let x = 0; x < outW; x++) {
           const idx = (y*outW + x)*4;
           const r = data[idx], g = data[idx+1], b = data[idx+2];
-          // Perceived luminance
           const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-          const t = lum / 255;               // 0..1
-          const ci = Math.round((1 - t) * n); // invert so dark→dense char
+          const t = lum / 255;
+          const ci = Math.round((1 - t) * n);
           row += chars[ci];
         }
         out += row + '\n';
@@ -333,6 +400,7 @@
 
     // Clean up on unload
     window.addEventListener('beforeunload', () => {
+      if (liveAnimId) cancelAnimationFrame(liveAnimId);
       if (stream) stream.getTracks().forEach(t => t.stop());
     });
   })();
