@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Webcam → Object → ASCII (Hi-Res + TTS + Log)</title>
+  <title>Webcam → Object → ASCII (No-Person Mode)</title>
   <style>
     :root { color-scheme: dark light; --fg:#e6edf3; --bg:#000; }
     html, body { height: 100%; }
@@ -46,6 +46,7 @@
     <span class="pill" id="modelStatus">Loading model…</span>
     <span class="pill" id="camStatus">Camera: not started</span>
     <span class="pill" id="liveStatus">Live: off</span>
+    <span class="pill">Person filtering: on</span>
   </div>
 </header>
 
@@ -105,7 +106,6 @@
             <input id="showBoxes" type="checkbox" checked />
             <label for="showBoxes">Show boxes</label>
 
-            <!-- NEW: TTS control -->
             <input id="speak" type="checkbox" />
             <label for="speak">Speak detections</label>
           </div>
@@ -125,7 +125,6 @@
     <pre id="asciiOut">(ascii will appear here)</pre>
   </section>
 
-  <!-- NEW: Deduped detection log -->
   <section class="panel stack">
     <div class="row">
       <strong>Detections Log (unique)</strong>
@@ -136,7 +135,7 @@
 </main>
 
 <footer>
-  Serve over HTTPS or localhost. Uses TensorFlow.js COCO-SSD (objects + “person”, not face recognition).
+  Serve over HTTPS or localhost. Uses TensorFlow.js COCO-SSD (objects only; “person” filtered out).
 </footer>
 
 <!-- TensorFlow.js + COCO-SSD -->
@@ -186,12 +185,10 @@
     if (!speakChk.checked) return;
     if (!('speechSynthesis' in window)) return;
     try {
-      // Cancel any pending speech for snappy updates
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = navigator.language || 'en-GB';
-      u.rate = 1;
-      u.pitch = 1;
+      u.rate = 1; u.pitch = 1;
       window.speechSynthesis.speak(u);
     } catch (_) {}
   };
@@ -233,8 +230,7 @@
       setProgress(10);
       model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
       modelStatus.textContent = 'Model: loaded';
-      setProgress(100);
-      setTimeout(() => setProgress(0), 400);
+      setProgress(100); setTimeout(() => setProgress(0), 400);
     } catch (err) {
       modelStatus.textContent = 'Model: failed to load';
       console.error(err);
@@ -255,7 +251,7 @@
     liveStatus.textContent = liveRunning ? (livePaused ? 'Live: paused' : 'Live: running') : 'Live: off';
   }
 
-  // Camera
+  // Camera (hi-res target)
   startBtn.addEventListener('click', async () => {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -277,7 +273,7 @@
   });
   asciiWidth.addEventListener('input', () => { wVal.textContent = asciiWidth.value; });
 
-  // UI actions (detect / snapshot)
+  // Detect only
   detectBtn.addEventListener('click', async () => {
     if (!model || !stream) return;
     labelEl.textContent = 'Detecting…';
@@ -285,9 +281,10 @@
     drawBoxes(detections);
     updateDetMeta(best, detections.length);
     updateLogAndSpeech(best, detections);
-    labelEl.textContent = best ? `Detected: ${best.class} (${(best.score*100).toFixed(1)}%)` : 'No confident detections.';
+    labelEl.textContent = best ? `Detected: ${best.class} (${(best.score*100).toFixed(1)}%)` : 'No confident detections (person filtered).';
   });
 
+  // Snapshot → ASCII
   snapBtn.addEventListener('click', async () => {
     if (!model || !stream) return;
     labelEl.textContent = 'Detecting…';
@@ -303,7 +300,7 @@
       cropInfo = [0, 0, frameCanvas.width, frameCanvas.height];
     } else {
       if (!best) {
-        asciiOut.textContent = '(No confident detection. Try again or switch Region to Full webcam frame.)';
+        asciiOut.textContent = '(No confident non-person detection. Try again or switch Region to Full webcam frame.)';
         setProgress(0);
         labelEl.textContent = 'No confident detections.';
         return;
@@ -351,21 +348,17 @@
     updateLogAndSpeech(best, detections);
 
     const mode = regionSel.value;
-    let bbox = null;
-
     if (mode === 'full') {
-      bbox = [0, 0, frameCanvas.width, frameCanvas.height];
-      const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+      const ascii = await cropAndAscii(frameCanvas, [0,0,frameCanvas.width,frameCanvas.height], parseInt(asciiWidth.value, 10), charsetSel.value);
       asciiOut.textContent = ascii;
       labelEl.textContent = 'Live: full frame';
     } else {
       if (best) {
-        bbox = best.bbox;
-        const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+        const ascii = await cropAndAscii(frameCanvas, best.bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
         asciiOut.textContent = ascii;
         labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
       } else {
-        asciiOut.textContent = '(No confident detection.)';
+        asciiOut.textContent = '(No confident non-person detection.)';
         labelEl.textContent = 'Live: no confident detections.';
       }
     }
@@ -386,22 +379,17 @@
     detMeta.textContent = `${best.class} ${(best.score*100).toFixed(0)}% • bbox ${w}×${h} @ (${x},${y}) • total: ${count}`;
   }
 
-  // NEW: log + speech helper
+  // Log + speech (no person)
   function updateLogAndSpeech(best, detections) {
-    // add all classes seen this frame (unique across session)
     for (const d of detections) addToLog(d.class);
-
-    // speak only when the best class changes, and only for reasonably confident detections
     if (best && best.class !== lastSpokenClass && best.score >= 0.55) {
       lastSpokenClass = best.class;
       speak(best.class);
     }
-    if (!best) {
-      // reset lastSpokenClass so next confident detection will speak again
-      lastSpokenClass = null;
-    }
+    if (!best) lastSpokenClass = null;
   }
 
+  // PERSON-FILTERED detection with adaptive threshold
   async function detectFrame(returnFrame = false) {
     const tmp = document.createElement('canvas');
     const vw = video.videoWidth, vh = video.videoHeight;
@@ -413,16 +401,25 @@
     ctx.drawImage(video, 0, 0, vw, vh);
 
     const predictions = await model.detect(tmp);
-    const good = predictions.filter(p => p.score >= 0.5);
 
+    // Helper to filter out "person" and apply threshold
+    const nonPerson = (thresh) =>
+      predictions.filter(p => p.class.toLowerCase() !== 'person' && p.score >= thresh);
+
+    // Try standard threshold first, then relax
+    let good = nonPerson(0.50);
+    if (!good.length) good = nonPerson(0.30);
+
+    // Best = highest score, tie-break by largest area
     let best = null;
     if (good.length) {
       best = good.slice().sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
-        const areaA = a.bbox[2]*a.bbox[3], areaB = b.bbox[2]*b.bbox[3];
+        const areaA = a.bbox[2] * a.bbox[3], areaB = b.bbox[2] * b.bbox[3];
         return areaB - areaA;
       })[0];
     }
+
     return { detections: good, best, frameCanvas: returnFrame ? tmp : null };
   }
 
