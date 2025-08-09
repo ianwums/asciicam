@@ -3,12 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Webcam → Object → ASCII</title>
+  <title>Webcam → Object → ASCII (Hi-Res)</title>
   <style>
-    :root { color-scheme: dark light; }
+    :root {
+      color-scheme: dark light;
+      --fg: #e6edf3;   /* foreground (ASCII text) */
+      --bg: #000000;   /* background */
+    }
+    html, body { height: 100%; }
     body {
       margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      background: #0b0c10; color: #e6edf3; display: grid; min-height: 100vh; 
+      background: #0b0c10; color: #e6edf3; display: grid; min-height: 100vh;
       grid-template-rows: auto 1fr auto;
     }
     header, footer { padding: 12px 16px; background: #0f1115; border-bottom: 1px solid #20232b; }
@@ -16,36 +21,34 @@
     main { display: grid; gap: 16px; padding: 16px; grid-template-columns: 1fr 1fr; }
     .panel { background: #0f1115; border: 1px solid #20232b; border-radius: 12px; padding: 12px; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .stack { display: grid; gap: 8px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .small { font-size: 12px; opacity: .8; }
     video, canvas { width: 100%; border-radius: 10px; background: #000; }
     #asciiOut {
-      white-space: pre; font-size: 10px; line-height: 10px; 
-      letter-spacing: 0px; overflow: auto; max-height: 70vh; background: #000; 
+      white-space: pre; font-size: 9px; line-height: 9px;
+      letter-spacing: 0px; overflow: auto; max-height: 70vh;
       border-radius: 10px; padding: 8px;
+      background: var(--bg); color: var(--fg);
     }
-    button, select, input[type="checkbox"] + label, input[type="range"] {
-      font: inherit; color: inherit;
-    }
+    button, select, input[type="checkbox"] + label, input[type="range"], label { font: inherit; color: inherit; }
     button {
       padding: 8px 12px; background: #1f6feb; color: #fff; border: 0; border-radius: 8px; cursor: pointer;
     }
     button.secondary { background: #30363d; }
     button:disabled { opacity: .6; cursor: not-allowed; }
-    .muted { opacity: .8; }
     .pill { padding: 2px 8px; border: 1px solid #2a2f3a; border-radius: 999px; font-size: 12px; }
-    .stack { display: grid; gap: 8px; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .small { font-size: 12px; opacity: .8; }
     .bar { height: 6px; background: #1b1f27; border-radius: 999px; overflow: hidden; }
     .bar > div { height: 100%; width: 0%; background: #1f6feb; transition: width .3s ease; }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-    }
+    fieldset { border: 1px solid #2a2f3a; border-radius: 10px; padding: 8px; }
+    legend { padding: 0 6px; font-size: 12px; opacity: 0.9; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
     <div class="row">
-      <strong>Webcam → Object → ASCII</strong>
+      <strong>Webcam → Object → ASCII (Hi-Res)</strong>
       <span class="pill" id="modelStatus">Loading model…</span>
       <span class="pill" id="camStatus">Camera: not started</span>
       <span class="pill" id="liveStatus">Live: off</span>
@@ -67,19 +70,21 @@
         </div>
         <div class="stack">
           <canvas id="draw" hidden></canvas>
-          <div class="stack">
+
+          <fieldset class="stack">
+            <legend>ASCII settings</legend>
             <div class="row">
-              <label class="small muted">ASCII width (chars): <span id="wVal">80</span></label>
-              <input id="asciiWidth" type="range" min="40" max="180" value="80" />
+              <label class="small">Width (characters): <span id="wVal">160</span></label>
+              <input id="asciiWidth" type="range" min="40" max="800" value="160" />
             </div>
-            <div class="row">
-              <input id="mirror" type="checkbox" />
-              <label for="mirror">Mirror preview</label>
-              <input id="showBoxes" type="checkbox" checked />
-              <label for="showBoxes">Show boxes on detect</label>
-            </div>
-            <div class="row small muted">
-              Charset:
+            <div class="row small">
+              <label for="region">Region:</label>
+              <select id="region">
+                <option value="full">Full webcam frame</option>
+                <option value="object" selected>Crop to best object</option>
+              </select>
+
+              <label for="charset">Charset:</label>
               <select id="charset">
                 <option value=" .:-=+*#%@">Ramp (light→dark)</option>
                 <option value=" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$">Detailed</option>
@@ -87,10 +92,26 @@
                 <option value="01">Binary</option>
                 <option value=" .oO#">Dots</option>
               </select>
+
+              <label for="theme">Theme:</label>
+              <select id="theme">
+                <option value="mono">Monochrome (light on dark)</option>
+                <option value="g_on_b" selected>Green on black</option>
+                <option value="b_on_g">Black on green</option>
+                <option value="r_on_b">Red on black</option>
+                <option value="b_on_r">Black on red</option>
+                <option value="r_on_g">Red on green</option>
+              </select>
+            </div>
+            <div class="row small">
+              <input id="mirror" type="checkbox" />
+              <label for="mirror">Mirror preview</label>
+              <input id="showBoxes" type="checkbox" checked />
+              <label for="showBoxes">Show boxes on detect</label>
             </div>
             <div class="bar" aria-hidden="true"><div id="prog"></div></div>
-            <div id="label" class="small muted">Ready.</div>
-          </div>
+            <div id="label" class="small">Ready.</div>
+          </fieldset>
         </div>
       </div>
     </section>
@@ -102,7 +123,7 @@
   </main>
 
   <footer>
-    Works locally over HTTPS/localhost. Uses TensorFlow.js COCO-SSD for detection (no face recognition, only “person” class).
+    Serve over HTTPS or localhost. Uses TensorFlow.js COCO-SSD (no face recognition, only “person” class for humans).
   </footer>
 
   <!-- TensorFlow.js + COCO-SSD -->
@@ -124,6 +145,8 @@
     const labelEl = document.getElementById('label');
     const prog = document.getElementById('prog');
     const charsetSel = document.getElementById('charset');
+    const themeSel = document.getElementById('theme');
+    const regionSel = document.getElementById('region');
     const modelStatus = document.getElementById('modelStatus');
     const camStatus = document.getElementById('camStatus');
     const liveStatus = document.getElementById('liveStatus');
@@ -139,9 +162,25 @@
     let livePaused = false;
     let liveAnimId = null;
     let lastTick = 0;
-    const LIVE_INTERVAL_MS = 250; // ~4 fps; adjust if you want smoother
+    const LIVE_INTERVAL_MS = 250; // ~4 fps
 
     const setProgress = (p) => { prog.style.width = `${Math.max(0, Math.min(100, p))}%`; };
+
+    // Themes (foreground/background)
+    function applyTheme(id) {
+      const root = document.documentElement;
+      switch (id) {
+        case 'g_on_b': root.style.setProperty('--fg', '#00FF66'); root.style.setProperty('--bg', '#000000'); break;
+        case 'b_on_g': root.style.setProperty('--fg', '#000000'); root.style.setProperty('--bg', '#00FF66'); break;
+        case 'r_on_b': root.style.setProperty('--fg', '#FF3B30'); root.style.setProperty('--bg', '#000000'); break;
+        case 'b_on_r': root.style.setProperty('--fg', '#000000'); root.style.setProperty('--bg', '#FF3B30'); break;
+        case 'r_on_g': root.style.setProperty('--fg', '#FF3B30'); root.style.setProperty('--bg', '#00FF66'); break;
+        case 'mono': default:
+          root.style.setProperty('--fg', '#e6edf3'); root.style.setProperty('--bg', '#000000'); break;
+      }
+    }
+    applyTheme(themeSel.value);
+    themeSel.addEventListener('change', () => applyTheme(themeSel.value));
 
     // Load model ASAP
     (async () => {
@@ -171,16 +210,18 @@
       liveStatus.textContent = liveRunning ? (livePaused ? 'Live: paused' : 'Live: running') : 'Live: off';
     }
 
-    // Start camera
+    // Start camera (target 1080p+ if available)
     startBtn.addEventListener('click', async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }
+          },
           audio: false
         });
         video.srcObject = stream;
         await video.play();
-        camStatus.textContent = 'Camera: running';
+        camStatus.textContent = 'Camera: running (hi-res)';
         updateButtons();
       } catch (err) {
         camStatus.textContent = 'Camera: error — check permissions';
@@ -210,31 +251,35 @@
       const { detections, best, frameCanvas } = await detectFrame(true);
       drawBoxes(detections);
       updateDetMeta(best, detections.length);
-      if (!best) {
-        asciiOut.textContent = '(No confident detection. Try again.)';
-        setProgress(0);
-        labelEl.textContent = 'No confident detections.';
-        return;
+
+      const mode = regionSel.value; // 'full' or 'object'
+      let cropInfo = null;
+      if (mode === 'full') {
+        cropInfo = [0, 0, frameCanvas.width, frameCanvas.height];
+      } else {
+        if (!best) {
+          asciiOut.textContent = '(No confident detection. Try again or switch Region to Full webcam frame.)';
+          setProgress(0);
+          labelEl.textContent = 'No confident detections.';
+          return;
+        }
+        cropInfo = best.bbox;
       }
+
       setProgress(60);
-      const ascii = await cropAndAscii(frameCanvas, best.bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+      const ascii = await cropAndAscii(frameCanvas, cropInfo, parseInt(asciiWidth.value, 10), charsetSel.value);
       asciiOut.textContent = ascii;
       setProgress(0);
-      labelEl.textContent = `ASCII generated for “${best.class}”.`;
+      labelEl.textContent = `ASCII generated (${mode === 'full' ? 'full frame' : `“${best?.class}”`}).`;
     });
 
-    // NEW: Live mode toggle
+    // Live mode
     liveBtn.addEventListener('click', () => {
       if (!model || !stream) return;
-      if (liveRunning) {
-        stopLive();
-      } else {
-        startLive();
-      }
+      if (liveRunning) stopLive(); else startLive();
       updateButtons();
     });
 
-    // NEW: Pause/Resume for live
     pauseBtn.addEventListener('click', () => {
       if (!liveRunning) return;
       livePaused = !livePaused;
@@ -246,7 +291,7 @@
       livePaused = false;
       lastTick = 0;
       labelEl.textContent = 'Live ASCII running…';
-      liveLoop(0); // kick off
+      liveLoop(0);
     }
 
     function stopLive() {
@@ -264,13 +309,24 @@
       drawBoxes(detections);
       updateDetMeta(best, detections.length);
 
-      if (best) {
-        const ascii = await cropAndAscii(frameCanvas, best.bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+      const mode = regionSel.value;
+      let bbox = null;
+
+      if (mode === 'full') {
+        bbox = [0, 0, frameCanvas.width, frameCanvas.height];
+        const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
         asciiOut.textContent = ascii;
-        labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
+        labelEl.textContent = 'Live: full frame';
       } else {
-        asciiOut.textContent = '(No confident detection.)';
-        labelEl.textContent = 'Live: no confident detections.';
+        if (best) {
+          bbox = best.bbox;
+          const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
+          asciiOut.textContent = ascii;
+          labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
+        } else {
+          asciiOut.textContent = '(No confident detection.)';
+          labelEl.textContent = 'Live: no confident detections.';
+        }
       }
     }
 
@@ -279,7 +335,6 @@
       if (!liveRunning) return;
       if (ts - lastTick >= LIVE_INTERVAL_MS) {
         lastTick = ts;
-        // Fire and forget; next frame continues regardless
         liveTick().catch(err => console.error(err));
       }
       liveAnimId = requestAnimationFrame(liveLoop);
@@ -287,7 +342,7 @@
 
     function updateDetMeta(best, count) {
       if (!best) {
-        detMeta.textContent = 'No detection';
+        detMeta.textContent = `No detection • total: ${count}`;
         return;
       }
       const [x, y, w, h] = best.bbox.map(n => Math.round(n));
@@ -356,25 +411,28 @@
       }
     }
 
-    async function cropAndAscii(sourceCanvas, bbox, outWidthChars = 80, charset = " .:-=+*#%@") {
-      const [bx, by, bw, bh] = bbox.map(n => Math.max(0, Math.floor(n)));
-      const sx = Math.min(bx, sourceCanvas.width - 1);
-      const sy = Math.min(by, sourceCanvas.height - 1);
-      const sw = Math.min(bw, sourceCanvas.width - sx);
-      const sh = Math.min(bh, sourceCanvas.height - sy);
+    // Convert region to ASCII
+    async function cropAndAscii(sourceCanvas, bbox, outWidthChars = 160, charset = " .:-=+*#%@") {
+      // If bbox is already [x,y,w,h], accept; if it's full frame, it's [0,0,w,h]
+      let [bx, by, bw, bh] = bbox;
+      bx = Math.max(0, Math.floor(bx));
+      by = Math.max(0, Math.floor(by));
+      bw = Math.max(1, Math.floor(Math.min(bw, sourceCanvas.width - bx)));
+      bh = Math.max(1, Math.floor(Math.min(bh, sourceCanvas.height - by)));
 
       const crop = document.createElement('canvas');
-      crop.width = sw; crop.height = sh;
+      crop.width = bw; crop.height = bh;
       const cctx = crop.getContext('2d', { willReadFrequently: true });
-      cctx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      cctx.drawImage(sourceCanvas, bx, by, bw, bh, 0, 0, bw, bh);
 
+      // Character aspect ratio tweak; characters are taller than wide.
       const charAspect = 2.0;
-      const outW = outWidthChars;
-      const outH = Math.max(12, Math.round((sh / sw) * outW / charAspect));
+      const outW = Math.max(1, outWidthChars);
+      const outH = Math.max(12, Math.round((bh / bw) * outW / charAspect));
 
+      // Scale down to target ASCII grid size
       const small = document.createElement('canvas');
-      small.width = outW;
-      small.height = outH;
+      small.width = outW; small.height = outH;
       const sctx = small.getContext('2d', { willReadFrequently: true, alpha: false });
       sctx.drawImage(crop, 0, 0, outW, outH);
 
@@ -388,9 +446,9 @@
         for (let x = 0; x < outW; x++) {
           const idx = (y*outW + x)*4;
           const r = data[idx], g = data[idx+1], b = data[idx+2];
-          const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+          const lum = 0.2126*r + 0.7152*g + 0.0722*b; // perceived luminance
           const t = lum / 255;
-          const ci = Math.round((1 - t) * n);
+          const ci = Math.round((1 - t) * n); // darker → denser char
           row += chars[ci];
         }
         out += row + '\n';
