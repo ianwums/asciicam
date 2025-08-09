@@ -3,465 +3,507 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Webcam → Object → ASCII (Hi-Res)</title>
+  <title>Webcam → Object → ASCII (Hi-Res + TTS + Log)</title>
   <style>
-    :root {
-      color-scheme: dark light;
-      --fg: #e6edf3;   /* foreground (ASCII text) */
-      --bg: #000000;   /* background */
-    }
+    :root { color-scheme: dark light; --fg:#e6edf3; --bg:#000; }
     html, body { height: 100%; }
     body {
       margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      background: #0b0c10; color: #e6edf3; display: grid; min-height: 100vh;
-      grid-template-rows: auto 1fr auto;
+      background:#0b0c10; color:#e6edf3; display:grid; min-height:100vh; grid-template-rows:auto 1fr auto;
     }
-    header, footer { padding: 12px 16px; background: #0f1115; border-bottom: 1px solid #20232b; }
-    footer { border-top: 1px solid #20232b; border-bottom: none; font-size: 12px; opacity: 0.8; }
-    main { display: grid; gap: 16px; padding: 16px; grid-template-columns: 1fr 1fr; }
-    .panel { background: #0f1115; border: 1px solid #20232b; border-radius: 12px; padding: 12px; }
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .stack { display: grid; gap: 8px; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .small { font-size: 12px; opacity: .8; }
-    video, canvas { width: 100%; border-radius: 10px; background: #000; }
+    header, footer { padding:12px 16px; background:#0f1115; border-bottom:1px solid #20232b; }
+    footer { border-top:1px solid #20232b; border-bottom:none; font-size:12px; opacity:.8; }
+    main { display:grid; gap:16px; padding:16px; grid-template-columns:1.4fr .6fr; }
+    .panel { background:#0f1115; border:1px solid #20232b; border-radius:12px; padding:12px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .stack { display:grid; gap:8px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .small { font-size:12px; opacity:.85; }
+    video, canvas { width:100%; border-radius:10px; background:#000; }
     #asciiOut {
-      white-space: pre; font-size: 9px; line-height: 9px;
-      letter-spacing: 0px; overflow: auto; max-height: 70vh;
-      border-radius: 10px; padding: 8px;
-      background: var(--bg); color: var(--fg);
+      white-space:pre; font-size:9px; line-height:9px; letter-spacing:0;
+      overflow:auto; max-height:70vh; border-radius:10px; padding:8px;
+      background:var(--bg); color:var(--fg);
     }
-    button, select, input[type="checkbox"] + label, input[type="range"], label { font: inherit; color: inherit; }
-    button {
-      padding: 8px 12px; background: #1f6feb; color: #fff; border: 0; border-radius: 8px; cursor: pointer;
-    }
-    button.secondary { background: #30363d; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    .pill { padding: 2px 8px; border: 1px solid #2a2f3a; border-radius: 999px; font-size: 12px; }
-    .bar { height: 6px; background: #1b1f27; border-radius: 999px; overflow: hidden; }
-    .bar > div { height: 100%; width: 0%; background: #1f6feb; transition: width .3s ease; }
-    fieldset { border: 1px solid #2a2f3a; border-radius: 10px; padding: 8px; }
-    legend { padding: 0 6px; font-size: 12px; opacity: 0.9; }
-    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+    button, select, input, label { font:inherit; color:inherit; }
+    button { padding:8px 12px; background:#1f6feb; color:#fff; border:0; border-radius:8px; cursor:pointer; }
+    button.secondary { background:#30363d; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .pill { padding:2px 8px; border:1px solid #2a2f3a; border-radius:999px; font-size:12px; }
+    .bar { height:6px; background:#1b1f27; border-radius:999px; overflow:hidden; }
+    .bar>div { height:100%; width:0%; background:#1f6feb; transition:width .3s ease; }
+    fieldset { border:1px solid #2a2f3a; border-radius:10px; padding:8px; }
+    legend { padding:0 6px; font-size:12px; opacity:.95; }
+    #detList { list-style:none; padding:0; margin:0; display:grid; gap:6px; }
+    #detList li { padding:6px 8px; background:#11151c; border:1px solid #232a35; border-radius:8px; }
+    @media (max-width:1100px){ main { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-  <header>
-    <div class="row">
-      <strong>Webcam → Object → ASCII (Hi-Res)</strong>
-      <span class="pill" id="modelStatus">Loading model…</span>
-      <span class="pill" id="camStatus">Camera: not started</span>
-      <span class="pill" id="liveStatus">Live: off</span>
-    </div>
-  </header>
+<header>
+  <div class="row">
+    <strong>Webcam → Object → ASCII</strong>
+    <span class="pill" id="modelStatus">Loading model…</span>
+    <span class="pill" id="camStatus">Camera: not started</span>
+    <span class="pill" id="liveStatus">Live: off</span>
+  </div>
+</header>
 
-  <main>
-    <section class="panel stack">
-      <div class="grid2">
-        <div class="stack">
-          <video id="video" autoplay playsinline muted></video>
-          <div class="row">
-            <button id="startBtn">Start camera</button>
-            <button id="snapBtn" disabled>Snapshot → ASCII</button>
-            <button id="detectBtn" disabled>Detect only</button>
-            <button id="liveBtn" class="secondary" disabled>Start Live</button>
-            <button id="pauseBtn" class="secondary" disabled>Pause</button>
-          </div>
-        </div>
-        <div class="stack">
-          <canvas id="draw" hidden></canvas>
-
-          <fieldset class="stack">
-            <legend>ASCII settings</legend>
-            <div class="row">
-              <label class="small">Width (characters): <span id="wVal">160</span></label>
-              <input id="asciiWidth" type="range" min="40" max="800" value="160" />
-            </div>
-            <div class="row small">
-              <label for="region">Region:</label>
-              <select id="region">
-                <option value="full">Full webcam frame</option>
-                <option value="object" selected>Crop to best object</option>
-              </select>
-
-              <label for="charset">Charset:</label>
-              <select id="charset">
-                <option value=" .:-=+*#%@">Ramp (light→dark)</option>
-                <option value=" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$">Detailed</option>
-                <option value="@%#*+=-:. ">Inverse</option>
-                <option value="01">Binary</option>
-                <option value=" .oO#">Dots</option>
-              </select>
-
-              <label for="theme">Theme:</label>
-              <select id="theme">
-                <option value="mono">Monochrome (light on dark)</option>
-                <option value="g_on_b" selected>Green on black</option>
-                <option value="b_on_g">Black on green</option>
-                <option value="r_on_b">Red on black</option>
-                <option value="b_on_r">Black on red</option>
-                <option value="r_on_g">Red on green</option>
-              </select>
-            </div>
-            <div class="row small">
-              <input id="mirror" type="checkbox" />
-              <label for="mirror">Mirror preview</label>
-              <input id="showBoxes" type="checkbox" checked />
-              <label for="showBoxes">Show boxes on detect</label>
-            </div>
-            <div class="bar" aria-hidden="true"><div id="prog"></div></div>
-            <div id="label" class="small">Ready.</div>
-          </fieldset>
+<main>
+  <section class="panel stack">
+    <div class="grid2">
+      <div class="stack">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="row">
+          <button id="startBtn">Start camera</button>
+          <button id="snapBtn" disabled>Snapshot → ASCII</button>
+          <button id="detectBtn" disabled>Detect only</button>
+          <button id="liveBtn" class="secondary" disabled>Start Live</button>
+          <button id="pauseBtn" class="secondary" disabled>Pause</button>
         </div>
       </div>
-    </section>
 
-    <section class="panel stack">
-      <div class="row"><strong>ASCII Output</strong> <span class="pill" id="detMeta">—</span></div>
-      <pre id="asciiOut">(ascii will appear here)</pre>
-    </section>
-  </main>
+      <div class="stack">
+        <canvas id="draw" hidden></canvas>
 
-  <footer>
-    Serve over HTTPS or localhost. Uses TensorFlow.js COCO-SSD (no face recognition, only “person” class for humans).
-  </footer>
+        <fieldset class="stack">
+          <legend>ASCII settings</legend>
+          <div class="row">
+            <label class="small">Width (chars): <span id="wVal">160</span></label>
+            <input id="asciiWidth" type="range" min="40" max="800" value="160" />
+          </div>
+          <div class="row small">
+            <label for="region">Region:</label>
+            <select id="region">
+              <option value="full">Full webcam frame</option>
+              <option value="object" selected>Crop to best object</option>
+            </select>
 
-  <!-- TensorFlow.js + COCO-SSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js" crossorigin="anonymous"></script>
+            <label for="charset">Charset:</label>
+            <select id="charset">
+              <option value=" .:-=+*#%@">Ramp (light→dark)</option>
+              <option value=" .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$">Detailed</option>
+              <option value="@%#*+=-:. ">Inverse</option>
+              <option value="01">Binary</option>
+              <option value=" .oO#">Dots</option>
+            </select>
 
-  <script>
-  (() => {
-    const video = document.getElementById('video');
-    const startBtn = document.getElementById('startBtn');
-    const snapBtn = document.getElementById('snapBtn');
-    const detectBtn = document.getElementById('detectBtn');
-    const liveBtn = document.getElementById('liveBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const asciiOut = document.getElementById('asciiOut');
-    const draw = document.getElementById('draw');
-    const asciiWidth = document.getElementById('asciiWidth');
-    const wVal = document.getElementById('wVal');
-    const labelEl = document.getElementById('label');
-    const prog = document.getElementById('prog');
-    const charsetSel = document.getElementById('charset');
-    const themeSel = document.getElementById('theme');
-    const regionSel = document.getElementById('region');
-    const modelStatus = document.getElementById('modelStatus');
-    const camStatus = document.getElementById('camStatus');
-    const liveStatus = document.getElementById('liveStatus');
-    const mirror = document.getElementById('mirror');
-    const showBoxes = document.getElementById('showBoxes');
-    const detMeta = document.getElementById('detMeta');
+            <label for="theme">Theme:</label>
+            <select id="theme">
+              <option value="mono">Monochrome (light on dark)</option>
+              <option value="g_on_b" selected>Green on black</option>
+              <option value="b_on_g">Black on green</option>
+              <option value="r_on_b">Red on black</option>
+              <option value="b_on_r">Black on red</option>
+              <option value="r_on_g">Red on green</option>
+            </select>
+          </div>
 
-    let model = null;
-    let stream = null;
+          <div class="row small">
+            <input id="mirror" type="checkbox" />
+            <label for="mirror">Mirror preview</label>
+            <input id="showBoxes" type="checkbox" checked />
+            <label for="showBoxes">Show boxes</label>
 
-    // Live mode state
-    let liveRunning = false;
-    let livePaused = false;
-    let liveAnimId = null;
-    let lastTick = 0;
-    const LIVE_INTERVAL_MS = 250; // ~4 fps
+            <!-- NEW: TTS control -->
+            <input id="speak" type="checkbox" />
+            <label for="speak">Speak detections</label>
+          </div>
 
-    const setProgress = (p) => { prog.style.width = `${Math.max(0, Math.min(100, p))}%`; };
+          <div class="bar" aria-hidden="true"><div id="prog"></div></div>
+          <div id="label" class="small">Ready.</div>
+        </fieldset>
+      </div>
+    </div>
+  </section>
 
-    // Themes (foreground/background)
-    function applyTheme(id) {
-      const root = document.documentElement;
-      switch (id) {
-        case 'g_on_b': root.style.setProperty('--fg', '#00FF66'); root.style.setProperty('--bg', '#000000'); break;
-        case 'b_on_g': root.style.setProperty('--fg', '#000000'); root.style.setProperty('--bg', '#00FF66'); break;
-        case 'r_on_b': root.style.setProperty('--fg', '#FF3B30'); root.style.setProperty('--bg', '#000000'); break;
-        case 'b_on_r': root.style.setProperty('--fg', '#000000'); root.style.setProperty('--bg', '#FF3B30'); break;
-        case 'r_on_g': root.style.setProperty('--fg', '#FF3B30'); root.style.setProperty('--bg', '#00FF66'); break;
-        case 'mono': default:
-          root.style.setProperty('--fg', '#e6edf3'); root.style.setProperty('--bg', '#000000'); break;
-      }
+  <section class="panel stack">
+    <div class="row">
+      <strong>ASCII Output</strong>
+      <span class="pill" id="detMeta">—</span>
+    </div>
+    <pre id="asciiOut">(ascii will appear here)</pre>
+  </section>
+
+  <!-- NEW: Deduped detection log -->
+  <section class="panel stack">
+    <div class="row">
+      <strong>Detections Log (unique)</strong>
+      <button id="clearLog" class="secondary">Clear log</button>
+    </div>
+    <ul id="detList"></ul>
+  </section>
+</main>
+
+<footer>
+  Serve over HTTPS or localhost. Uses TensorFlow.js COCO-SSD (objects + “person”, not face recognition).
+</footer>
+
+<!-- TensorFlow.js + COCO-SSD -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js" crossorigin="anonymous"></script>
+
+<script>
+(() => {
+  const video = document.getElementById('video');
+  const startBtn = document.getElementById('startBtn');
+  const snapBtn = document.getElementById('snapBtn');
+  const detectBtn = document.getElementById('detectBtn');
+  const liveBtn = document.getElementById('liveBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const asciiOut = document.getElementById('asciiOut');
+  const draw = document.getElementById('draw');
+  const asciiWidth = document.getElementById('asciiWidth');
+  const wVal = document.getElementById('wVal');
+  const labelEl = document.getElementById('label');
+  const prog = document.getElementById('prog');
+  const charsetSel = document.getElementById('charset');
+  const themeSel = document.getElementById('theme');
+  const regionSel = document.getElementById('region');
+  const modelStatus = document.getElementById('modelStatus');
+  const camStatus = document.getElementById('camStatus');
+  const liveStatus = document.getElementById('liveStatus');
+  const mirror = document.getElementById('mirror');
+  const showBoxes = document.getElementById('showBoxes');
+  const detMeta = document.getElementById('detMeta');
+  const speakChk = document.getElementById('speak');
+  const detList = document.getElementById('detList');
+  const clearLogBtn = document.getElementById('clearLog');
+
+  let model = null;
+  let stream = null;
+
+  // Live state
+  let liveRunning = false;
+  let livePaused = false;
+  let liveAnimId = null;
+  let lastTick = 0;
+  const LIVE_INTERVAL_MS = 250; // ~4 fps
+
+  // TTS state
+  let lastSpokenClass = null;
+  const speak = (text) => {
+    if (!speakChk.checked) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      // Cancel any pending speech for snappy updates
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = navigator.language || 'en-GB';
+      u.rate = 1;
+      u.pitch = 1;
+      window.speechSynthesis.speak(u);
+    } catch (_) {}
+  };
+
+  // Unique detections log
+  const seen = new Set();
+  function addToLog(cls) {
+    if (seen.has(cls)) return;
+    seen.add(cls);
+    const li = document.createElement('li');
+    li.textContent = cls;
+    detList.appendChild(li);
+  }
+  clearLogBtn.addEventListener('click', () => {
+    seen.clear();
+    detList.innerHTML = '';
+  });
+
+  // Theming
+  function applyTheme(id) {
+    const root = document.documentElement;
+    switch (id) {
+      case 'g_on_b': root.style.setProperty('--fg','#00FF66'); root.style.setProperty('--bg','#000'); break;
+      case 'b_on_g': root.style.setProperty('--fg','#000'); root.style.setProperty('--bg','#00FF66'); break;
+      case 'r_on_b': root.style.setProperty('--fg','#FF3B30'); root.style.setProperty('--bg','#000'); break;
+      case 'b_on_r': root.style.setProperty('--fg','#000'); root.style.setProperty('--bg','#FF3B30'); break;
+      case 'r_on_g': root.style.setProperty('--fg','#FF3B30'); root.style.setProperty('--bg','#00FF66'); break;
+      case 'mono': default: root.style.setProperty('--fg','#e6edf3'); root.style.setProperty('--bg','#000'); break;
     }
-    applyTheme(themeSel.value);
-    themeSel.addEventListener('change', () => applyTheme(themeSel.value));
+  }
+  applyTheme(themeSel.value);
+  themeSel.addEventListener('change', () => applyTheme(themeSel.value));
 
-    // Load model ASAP
-    (async () => {
-      try {
-        setProgress(10);
-        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
-        modelStatus.textContent = 'Model: loaded';
-        setProgress(100);
-        setTimeout(() => setProgress(0), 400);
-      } catch (err) {
-        modelStatus.textContent = 'Model: failed to load';
-        console.error(err);
-      }
+  const setProgress = (p) => { prog.style.width = `${Math.max(0, Math.min(100, p))}%`; };
+
+  // Load model
+  (async () => {
+    try {
+      setProgress(10);
+      model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      modelStatus.textContent = 'Model: loaded';
+      setProgress(100);
+      setTimeout(() => setProgress(0), 400);
+    } catch (err) {
+      modelStatus.textContent = 'Model: failed to load';
+      console.error(err);
+    }
+    updateButtons();
+  })();
+
+  function updateButtons() {
+    const camReady = !!stream;
+    const mdlReady = !!model;
+    startBtn.disabled = camReady;
+    snapBtn.disabled = !(camReady && mdlReady);
+    detectBtn.disabled = !(camReady && mdlReady);
+    liveBtn.disabled = !(camReady && mdlReady);
+    pauseBtn.disabled = !(camReady && mdlReady && liveRunning);
+    pauseBtn.textContent = livePaused ? 'Resume' : 'Pause';
+    liveBtn.textContent = liveRunning ? 'Stop Live' : 'Start Live';
+    liveStatus.textContent = liveRunning ? (livePaused ? 'Live: paused' : 'Live: running') : 'Live: off';
+  }
+
+  // Camera
+  startBtn.addEventListener('click', async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      camStatus.textContent = 'Camera: running (hi-res)';
       updateButtons();
-    })();
+    } catch (err) {
+      camStatus.textContent = 'Camera: error — check permissions';
+      console.error(err);
+    }
+  });
 
-    function updateButtons() {
-      const camReady = !!stream;
-      const mdlReady = !!model;
-      startBtn.disabled = camReady;
-      snapBtn.disabled = !(camReady && mdlReady);
-      detectBtn.disabled = !(camReady && mdlReady);
-      liveBtn.disabled = !(camReady && mdlReady);
-      pauseBtn.disabled = !(camReady && mdlReady && liveRunning);
-      pauseBtn.textContent = livePaused ? 'Resume' : 'Pause';
-      liveBtn.textContent = liveRunning ? 'Stop Live' : 'Start Live';
-      liveStatus.textContent = liveRunning ? (livePaused ? 'Live: paused' : 'Live: running') : 'Live: off';
+  mirror.addEventListener('change', () => {
+    video.style.transform = mirror.checked ? 'scaleX(-1)' : 'none';
+  });
+  asciiWidth.addEventListener('input', () => { wVal.textContent = asciiWidth.value; });
+
+  // UI actions (detect / snapshot)
+  detectBtn.addEventListener('click', async () => {
+    if (!model || !stream) return;
+    labelEl.textContent = 'Detecting…';
+    const { detections, best } = await detectFrame();
+    drawBoxes(detections);
+    updateDetMeta(best, detections.length);
+    updateLogAndSpeech(best, detections);
+    labelEl.textContent = best ? `Detected: ${best.class} (${(best.score*100).toFixed(1)}%)` : 'No confident detections.';
+  });
+
+  snapBtn.addEventListener('click', async () => {
+    if (!model || !stream) return;
+    labelEl.textContent = 'Detecting…';
+    setProgress(25);
+    const { detections, best, frameCanvas } = await detectFrame(true);
+    drawBoxes(detections);
+    updateDetMeta(best, detections.length);
+    updateLogAndSpeech(best, detections);
+
+    const mode = regionSel.value;
+    let cropInfo = null;
+    if (mode === 'full') {
+      cropInfo = [0, 0, frameCanvas.width, frameCanvas.height];
+    } else {
+      if (!best) {
+        asciiOut.textContent = '(No confident detection. Try again or switch Region to Full webcam frame.)';
+        setProgress(0);
+        labelEl.textContent = 'No confident detections.';
+        return;
+      }
+      cropInfo = best.bbox;
     }
 
-    // Start camera (target 1080p+ if available)
-    startBtn.addEventListener('click', async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }
-          },
-          audio: false
-        });
-        video.srcObject = stream;
-        await video.play();
-        camStatus.textContent = 'Camera: running (hi-res)';
-        updateButtons();
-      } catch (err) {
-        camStatus.textContent = 'Camera: error — check permissions';
-        console.error(err);
-      }
-    });
+    setProgress(60);
+    const ascii = await cropAndAscii(frameCanvas, cropInfo, parseInt(asciiWidth.value, 10), charsetSel.value);
+    asciiOut.textContent = ascii;
+    setProgress(0);
+    labelEl.textContent = `ASCII generated (${mode === 'full' ? 'full frame' : `“${best?.class}”`}).`;
+  });
 
-    mirror.addEventListener('change', () => {
-      video.style.transform = mirror.checked ? 'scaleX(-1)' : 'none';
-    });
+  // Live controls
+  liveBtn.addEventListener('click', () => {
+    if (!model || !stream) return;
+    if (liveRunning) stopLive(); else startLive();
+    updateButtons();
+  });
+  pauseBtn.addEventListener('click', () => {
+    if (!liveRunning) return;
+    livePaused = !livePaused;
+    updateButtons();
+  });
 
-    asciiWidth.addEventListener('input', () => { wVal.textContent = asciiWidth.value; });
+  function startLive() {
+    liveRunning = true; livePaused = false; lastTick = 0;
+    labelEl.textContent = 'Live ASCII running…';
+    liveLoop(0);
+  }
+  function stopLive() {
+    liveRunning = false; livePaused = false;
+    if (liveAnimId) cancelAnimationFrame(liveAnimId);
+    liveAnimId = null;
+    labelEl.textContent = 'Live stopped.';
+  }
 
-    detectBtn.addEventListener('click', async () => {
-      if (!model || !stream) return;
-      labelEl.textContent = 'Detecting…';
-      const { detections, best } = await detectFrame();
-      drawBoxes(detections);
-      updateDetMeta(best, detections.length);
-      labelEl.textContent = best ? `Detected: ${best.class} (${(best.score*100).toFixed(1)}%)` : 'No confident detections.';
-    });
+  async function liveTick() {
+    if (!liveRunning || livePaused) return;
 
-    snapBtn.addEventListener('click', async () => {
-      if (!model || !stream) return;
-      labelEl.textContent = 'Detecting…';
-      setProgress(25);
-      const { detections, best, frameCanvas } = await detectFrame(true);
-      drawBoxes(detections);
-      updateDetMeta(best, detections.length);
+    const { detections, best, frameCanvas } = await detectFrame(true);
+    drawBoxes(detections);
+    updateDetMeta(best, detections.length);
+    updateLogAndSpeech(best, detections);
 
-      const mode = regionSel.value; // 'full' or 'object'
-      let cropInfo = null;
-      if (mode === 'full') {
-        cropInfo = [0, 0, frameCanvas.width, frameCanvas.height];
-      } else {
-        if (!best) {
-          asciiOut.textContent = '(No confident detection. Try again or switch Region to Full webcam frame.)';
-          setProgress(0);
-          labelEl.textContent = 'No confident detections.';
-          return;
-        }
-        cropInfo = best.bbox;
-      }
+    const mode = regionSel.value;
+    let bbox = null;
 
-      setProgress(60);
-      const ascii = await cropAndAscii(frameCanvas, cropInfo, parseInt(asciiWidth.value, 10), charsetSel.value);
+    if (mode === 'full') {
+      bbox = [0, 0, frameCanvas.width, frameCanvas.height];
+      const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
       asciiOut.textContent = ascii;
-      setProgress(0);
-      labelEl.textContent = `ASCII generated (${mode === 'full' ? 'full frame' : `“${best?.class}”`}).`;
-    });
-
-    // Live mode
-    liveBtn.addEventListener('click', () => {
-      if (!model || !stream) return;
-      if (liveRunning) stopLive(); else startLive();
-      updateButtons();
-    });
-
-    pauseBtn.addEventListener('click', () => {
-      if (!liveRunning) return;
-      livePaused = !livePaused;
-      updateButtons();
-    });
-
-    function startLive() {
-      liveRunning = true;
-      livePaused = false;
-      lastTick = 0;
-      labelEl.textContent = 'Live ASCII running…';
-      liveLoop(0);
-    }
-
-    function stopLive() {
-      liveRunning = false;
-      livePaused = false;
-      if (liveAnimId) cancelAnimationFrame(liveAnimId);
-      liveAnimId = null;
-      labelEl.textContent = 'Live stopped.';
-    }
-
-    async function liveTick() {
-      if (!liveRunning || livePaused) return;
-
-      const { detections, best, frameCanvas } = await detectFrame(true);
-      drawBoxes(detections);
-      updateDetMeta(best, detections.length);
-
-      const mode = regionSel.value;
-      let bbox = null;
-
-      if (mode === 'full') {
-        bbox = [0, 0, frameCanvas.width, frameCanvas.height];
+      labelEl.textContent = 'Live: full frame';
+    } else {
+      if (best) {
+        bbox = best.bbox;
         const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
         asciiOut.textContent = ascii;
-        labelEl.textContent = 'Live: full frame';
+        labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
       } else {
-        if (best) {
-          bbox = best.bbox;
-          const ascii = await cropAndAscii(frameCanvas, bbox, parseInt(asciiWidth.value, 10), charsetSel.value);
-          asciiOut.textContent = ascii;
-          labelEl.textContent = `Live: “${best.class}” ${(best.score*100).toFixed(0)}%`;
-        } else {
-          asciiOut.textContent = '(No confident detection.)';
-          labelEl.textContent = 'Live: no confident detections.';
-        }
+        asciiOut.textContent = '(No confident detection.)';
+        labelEl.textContent = 'Live: no confident detections.';
       }
     }
+  }
 
-    // Throttled rAF loop
-    function liveLoop(ts) {
-      if (!liveRunning) return;
-      if (ts - lastTick >= LIVE_INTERVAL_MS) {
-        lastTick = ts;
-        liveTick().catch(err => console.error(err));
-      }
-      liveAnimId = requestAnimationFrame(liveLoop);
+  function liveLoop(ts) {
+    if (!liveRunning) return;
+    if (ts - lastTick >= LIVE_INTERVAL_MS) {
+      lastTick = ts;
+      liveTick().catch(err => console.error(err));
     }
+    liveAnimId = requestAnimationFrame(liveLoop);
+  }
 
-    function updateDetMeta(best, count) {
-      if (!best) {
-        detMeta.textContent = `No detection • total: ${count}`;
-        return;
-      }
-      const [x, y, w, h] = best.bbox.map(n => Math.round(n));
-      detMeta.textContent = `${best.class} ${(best.score*100).toFixed(0)}% • bbox ${w}×${h} @ (${x},${y}) • total: ${count}`;
+  function updateDetMeta(best, count) {
+    if (!best) { detMeta.textContent = `No detection • total: ${count}`; return; }
+    const [x, y, w, h] = best.bbox.map(n => Math.round(n));
+    detMeta.textContent = `${best.class} ${(best.score*100).toFixed(0)}% • bbox ${w}×${h} @ (${x},${y}) • total: ${count}`;
+  }
+
+  // NEW: log + speech helper
+  function updateLogAndSpeech(best, detections) {
+    // add all classes seen this frame (unique across session)
+    for (const d of detections) addToLog(d.class);
+
+    // speak only when the best class changes, and only for reasonably confident detections
+    if (best && best.class !== lastSpokenClass && best.score >= 0.55) {
+      lastSpokenClass = best.class;
+      speak(best.class);
     }
-
-    async function detectFrame(returnFrame = false) {
-      const tmp = document.createElement('canvas');
-      const vw = video.videoWidth, vh = video.videoHeight;
-      if (!vw || !vh) return { detections: [], best: null, frameCanvas: returnFrame ? tmp : null };
-      tmp.width = vw; tmp.height = vh;
-      const ctx = tmp.getContext('2d', { willReadFrequently: true });
-
-      if (mirror.checked) {
-        ctx.translate(vw, 0);
-        ctx.scale(-1, 1);
-      }
-      ctx.drawImage(video, 0, 0, vw, vh);
-
-      const predictions = await model.detect(tmp);
-      const good = predictions.filter(p => p.score >= 0.5);
-
-      let best = null;
-      if (good.length) {
-        best = good.slice().sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          const areaA = a.bbox[2]*a.bbox[3], areaB = b.bbox[2]*b.bbox[3];
-          return areaB - areaA;
-        })[0];
-      }
-
-      return { detections: good, best, frameCanvas: returnFrame ? tmp : null };
+    if (!best) {
+      // reset lastSpokenClass so next confident detection will speak again
+      lastSpokenClass = null;
     }
+  }
 
-    function drawBoxes(detections) {
-      const vw = video.videoWidth, vh = video.videoHeight;
-      if (!vw || !vh) return;
-      draw.width = vw; draw.height = vh;
-      const ctx = draw.getContext('2d');
-      draw.hidden = false;
+  async function detectFrame(returnFrame = false) {
+    const tmp = document.createElement('canvas');
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return { detections: [], best: null, frameCanvas: returnFrame ? tmp : null };
+    tmp.width = vw; tmp.height = vh;
+    const ctx = tmp.getContext('2d', { willReadFrequently: true });
 
-      ctx.drawImage(video, 0, 0, vw, vh);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(0, 0, vw, vh);
+    if (mirror.checked) { ctx.translate(vw, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(video, 0, 0, vw, vh);
 
-      if (!showBoxes.checked) {
-        ctx.clearRect(0, 0, vw, vh);
-        return;
-      }
+    const predictions = await model.detect(tmp);
+    const good = predictions.filter(p => p.score >= 0.5);
 
-      for (const p of detections) {
-        const [x, y, w, h] = p.bbox;
-        ctx.strokeStyle = '#1f6feb';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, w, h);
-
-        const tag = `${p.class} ${(p.score*100).toFixed(0)}%`;
-        ctx.font = '16px ui-monospace, monospace';
-        const pad = 6;
-        const textW = ctx.measureText(tag).width + pad*2;
-        const textH = 20 + pad*2;
-        ctx.fillStyle = 'rgba(15,17,21,0.9)';
-        ctx.fillRect(x, y - textH, textW, textH);
-        ctx.fillStyle = '#e6edf3';
-        ctx.fillText(tag, x + pad, y - pad);
-      }
+    let best = null;
+    if (good.length) {
+      best = good.slice().sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const areaA = a.bbox[2]*a.bbox[3], areaB = b.bbox[2]*b.bbox[3];
+        return areaB - areaA;
+      })[0];
     }
+    return { detections: good, best, frameCanvas: returnFrame ? tmp : null };
+  }
 
-    // Convert region to ASCII
-    async function cropAndAscii(sourceCanvas, bbox, outWidthChars = 160, charset = " .:-=+*#%@") {
-      // If bbox is already [x,y,w,h], accept; if it's full frame, it's [0,0,w,h]
-      let [bx, by, bw, bh] = bbox;
-      bx = Math.max(0, Math.floor(bx));
-      by = Math.max(0, Math.floor(by));
-      bw = Math.max(1, Math.floor(Math.min(bw, sourceCanvas.width - bx)));
-      bh = Math.max(1, Math.floor(Math.min(bh, sourceCanvas.height - by)));
+  function drawBoxes(detections) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    draw.width = vw; draw.height = vh;
+    const ctx = draw.getContext('2d');
+    draw.hidden = false;
 
-      const crop = document.createElement('canvas');
-      crop.width = bw; crop.height = bh;
-      const cctx = crop.getContext('2d', { willReadFrequently: true });
-      cctx.drawImage(sourceCanvas, bx, by, bw, bh, 0, 0, bw, bh);
+    ctx.drawImage(video, 0, 0, vw, vh);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 0, vw, vh);
 
-      // Character aspect ratio tweak; characters are taller than wide.
-      const charAspect = 2.0;
-      const outW = Math.max(1, outWidthChars);
-      const outH = Math.max(12, Math.round((bh / bw) * outW / charAspect));
+    if (!showBoxes.checked) { ctx.clearRect(0, 0, vw, vh); return; }
 
-      // Scale down to target ASCII grid size
-      const small = document.createElement('canvas');
-      small.width = outW; small.height = outH;
-      const sctx = small.getContext('2d', { willReadFrequently: true, alpha: false });
-      sctx.drawImage(crop, 0, 0, outW, outH);
+    for (const p of detections) {
+      const [x, y, w, h] = p.bbox;
+      ctx.strokeStyle = '#1f6feb';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, h);
 
-      const { data } = sctx.getImageData(0, 0, outW, outH);
-      const chars = charset;
-      const n = chars.length - 1;
-
-      let out = '';
-      for (let y = 0; y < outH; y++) {
-        let row = '';
-        for (let x = 0; x < outW; x++) {
-          const idx = (y*outW + x)*4;
-          const r = data[idx], g = data[idx+1], b = data[idx+2];
-          const lum = 0.2126*r + 0.7152*g + 0.0722*b; // perceived luminance
-          const t = lum / 255;
-          const ci = Math.round((1 - t) * n); // darker → denser char
-          row += chars[ci];
-        }
-        out += row + '\n';
-      }
-      return out;
+      const tag = `${p.class} ${(p.score*100).toFixed(0)}%`;
+      ctx.font = '16px ui-monospace, monospace';
+      const pad = 6;
+      const textW = ctx.measureText(tag).width + pad*2;
+      const textH = 20 + pad*2;
+      ctx.fillStyle = 'rgba(15,17,21,0.9)';
+      ctx.fillRect(x, y - textH, textW, textH);
+      ctx.fillStyle = '#e6edf3';
+      ctx.fillText(tag, x + pad, y - pad);
     }
+  }
 
-    // Clean up on unload
-    window.addEventListener('beforeunload', () => {
-      if (liveAnimId) cancelAnimationFrame(liveAnimId);
-      if (stream) stream.getTracks().forEach(t => t.stop());
-    });
-  })();
-  </script>
+  async function cropAndAscii(sourceCanvas, bbox, outWidthChars = 160, charset = " .:-=+*#%@") {
+    let [bx, by, bw, bh] = bbox;
+    bx = Math.max(0, Math.floor(bx));
+    by = Math.max(0, Math.floor(by));
+    bw = Math.max(1, Math.floor(Math.min(bw, sourceCanvas.width - bx)));
+    bh = Math.max(1, Math.floor(Math.min(bh, sourceCanvas.height - by)));
+
+    const crop = document.createElement('canvas');
+    crop.width = bw; crop.height = bh;
+    const cctx = crop.getContext('2d', { willReadFrequently: true });
+    cctx.drawImage(sourceCanvas, bx, by, bw, bh, 0, 0, bw, bh);
+
+    const charAspect = 2.0;
+    const outW = Math.max(1, outWidthChars);
+    const outH = Math.max(12, Math.round((bh / bw) * outW / charAspect));
+
+    const small = document.createElement('canvas');
+    small.width = outW; small.height = outH;
+    const sctx = small.getContext('2d', { willReadFrequently: true, alpha: false });
+    sctx.drawImage(crop, 0, 0, outW, outH);
+
+    const { data } = sctx.getImageData(0, 0, outW, outH);
+    const chars = charset;
+    const n = chars.length - 1;
+
+    let out = '';
+    for (let y = 0; y < outH; y++) {
+      let row = '';
+      for (let x = 0; x < outW; x++) {
+        const idx = (y*outW + x)*4;
+        const r = data[idx], g = data[idx+1], b = data[idx+2];
+        const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+        const t = lum / 255;
+        const ci = Math.round((1 - t) * n);
+        row += chars[ci];
+      }
+      out += row + '\n';
+    }
+    return out;
+  }
+
+  window.addEventListener('beforeunload', () => {
+    if (liveAnimId) cancelAnimationFrame(liveAnimId);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  });
+})();
+</script>
 </body>
 </html>
