@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Webcam → Object → ASCII (No-Person Mode)</title>
+  <title>Webcam → Object → ASCII (One-Time TTS, No Person)</title>
   <style>
     :root { color-scheme: dark light; --fg:#e6edf3; --bg:#000; }
     html, body { height: 100%; }
@@ -179,13 +179,12 @@
   let lastTick = 0;
   const LIVE_INTERVAL_MS = 250; // ~4 fps
 
-  // TTS state
-  let lastSpokenClass = null;
+  // TTS helpers
   const speak = (text) => {
     if (!speakChk.checked) return;
     if (!('speechSynthesis' in window)) return;
     try {
-      window.speechSynthesis.cancel();
+      window.speechSynthesis.cancel(); // keep it snappy
       const u = new SpeechSynthesisUtterance(text);
       u.lang = navigator.language || 'en-GB';
       u.rate = 1; u.pitch = 1;
@@ -193,8 +192,10 @@
     } catch (_) {}
   };
 
-  // Unique detections log
-  const seen = new Set();
+  // Unique detections + speech memory
+  const seen = new Set();   // classes displayed in log
+  const spoken = new Set(); // classes already spoken
+
   function addToLog(cls) {
     if (seen.has(cls)) return;
     seen.add(cls);
@@ -202,8 +203,10 @@
     li.textContent = cls;
     detList.appendChild(li);
   }
+
   clearLogBtn.addEventListener('click', () => {
     seen.clear();
+    spoken.clear(); // allow speaking again after clearing
     detList.innerHTML = '';
   });
 
@@ -379,14 +382,13 @@
     detMeta.textContent = `${best.class} ${(best.score*100).toFixed(0)}% • bbox ${w}×${h} @ (${x},${y}) • total: ${count}`;
   }
 
-  // Log + speech (no person)
+  // NEW: log + one-time speech
   function updateLogAndSpeech(best, detections) {
     for (const d of detections) addToLog(d.class);
-    if (best && best.class !== lastSpokenClass && best.score >= 0.55) {
-      lastSpokenClass = best.class;
+    if (best && best.score >= 0.55 && !spoken.has(best.class)) {
+      spoken.add(best.class);
       speak(best.class);
     }
-    if (!best) lastSpokenClass = null;
   }
 
   // PERSON-FILTERED detection with adaptive threshold
@@ -402,20 +404,20 @@
 
     const predictions = await model.detect(tmp);
 
-    // Helper to filter out "person" and apply threshold
+    // Filter helper: ignore "person", apply threshold
     const nonPerson = (thresh) =>
       predictions.filter(p => p.class.toLowerCase() !== 'person' && p.score >= thresh);
 
-    // Try standard threshold first, then relax
+    // Try standard threshold first, then relax to find "anything else"
     let good = nonPerson(0.50);
     if (!good.length) good = nonPerson(0.30);
 
-    // Best = highest score, tie-break by largest area
+    // Choose best (highest score, tie → largest area)
     let best = null;
     if (good.length) {
       best = good.slice().sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
-        const areaA = a.bbox[2] * a.bbox[3], areaB = b.bbox[2] * b.bbox[3];
+        const areaA = a.bbox[2]*a.bbox[3], areaB = b.bbox[2]*b.bbox[3];
         return areaB - areaA;
       })[0];
     }
